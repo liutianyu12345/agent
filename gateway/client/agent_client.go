@@ -38,12 +38,12 @@ type StreamTaskRequest struct {
 // ApproveTaskRequest 发往python服务的审批结果结构体
 type ApproveTaskRequest struct {
 	ThreadID string `json:"thread_id"`
-	Approve  bool   `json:"approve"`
+	Approved bool   `json:"approved"`
 }
 
 // ForwardStream 将任务请求发给 Python Agent，并把逐行收到的 SSE 数据写入 onChunk 回调
 func (ac *AgentClient) ForwardStream(ctx context.Context, req *StreamTaskRequest,
-	onChunk func(line string) error) {
+	onChunk func(line string) error) error {
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("序列化请求失败: %w", err)
@@ -86,6 +86,40 @@ func (ac *AgentClient) ForwardStream(ctx context.Context, req *StreamTaskRequest
 				if err := onChunk(trimmed); err != nil {
 					return err
 				}
+			}
+		}
+	}
+}
+
+// ForwardApprove 将审批结果发给 Python Agent
+func (ac *AgentClient) ForwardApprove(ctx context.Context, req *ApproveTaskRequest,
+	onChunk func(line string) error) error {
+	reqBytes, _ := json.Marshal(req)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		ac.BaseURL+"/approve", bytes.NewReader(reqBytes))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+	resp, err := ac.HTTPClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+		trimmed := strings.TrimRight(line, "\r\n")
+		if trimmed != "" {
+			if err := onChunk(trimmed); err != nil {
+				return err
 			}
 		}
 	}
