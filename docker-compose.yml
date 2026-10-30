@@ -1,0 +1,46 @@
+# 全栈基础中间件一键拉起 (Qdrant / Redis / Langfuse / Postgres)
+version: '3.9'
+
+services:
+  # 1. 向量数据库 (Qdrant)
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant_rag
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  # 2. 缓存与限流中心 (Redis)
+  redis:
+    image: redis:7-alpine
+    container_name: redis_gateway
+    ports:
+      - "6379:6379"
+
+  # 3. 可观测性平台 (Langfuse)
+  langfuse:
+    image: ghcr.io/langfuse/langfuse:2
+    depends_on:
+      - postgres
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/langfuse
+      - NEXTAUTH_SECRET=secret123456789
+      - SALT=salt123456789
+      - NEXTAUTH_URL=http://localhost:3000
+      - TELEMETRY_ENABLED=false
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=langfuse
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  qdrant_data:
+  pgdata:
